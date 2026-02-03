@@ -1,50 +1,94 @@
-# FarmLokal Backend 
+# FarmLokal Backend
 
-High-performance, scalable backend for the FarmLokal marketplace, connecting households directly with local farmers. Built with **Node.js, TypeScript, MySQL, and Redis**.
+High-performance backend for the FarmLokal marketplace, connecting households directly with local farmers and producers. Built with Node.js (TypeScript), MySQL, and Redis, with a focus on performance, reliability, and clean architecture.
 
----
+## Architecture Overview
 
-##  Architecture Overview
+The system follows a **Layered Architecture** to ensure separation of concerns and maintainability:
 
-The system follows a **Layered Architecture** to ensure separation of concerns, scalability, and maintainability:
-
-*   **Controllers (`src/controllers`)**: Handle HTTP requests, parsing, validation, and sending responses. They are thin and delegate logic to services.
-*   **Services (`src/services`)**: Encapsulate business logic, database interactions, and external API calls. This is where the core work happens.
-*   **Data Access**:
-    *   **MySQL**: Primary transactional database schema for Products.
-    *   **Redis**: High-speed layer for Caching (Products, Tokens) and Rate Limiting.
-*   **Middlewares (`src/middlewares`)**: Cross-cutting concerns like Global Error Handling and Rate Limiting.
-*   **Configuration (`src/config`)**: Centralized type-safe environment variables and database connections.
+*   **Controllers (`src/controllers`)**: Handle HTTP requests, input parsing, validation, and responses.
+*   **Services (`src/services`)**: Contain business logic, database queries, Redis caching, OAuth token handling, and external API integrations.
+*   **Data Layer**:
+    *   **MySQL**: Primary database for product data.
+    *   **Redis**: Used for caching, OAuth tokens, rate limiting, and webhook idempotency.
+*   **Middlewares (`src/middlewares`)**: Global error handling, rate limiting, and request validation.
+*   **Config (`src/config`)**: Centralized environment configuration and connection setup.
 
 ---
 
-##  Performance Optimizations
+## 🚀 Performance Optimizations
 
 1.  **Cursor-Based Pagination**
-    *   **Why**: Traditional `OFFSET` pagination becomes O(N) slow (scanning millions of rows) as you go deeper.
-    *   **Implementation**: We use the `created_at` timestamp as a pointer. Queries use `WHERE created_at < cursor ORDER BY created_at DESC LIMIT N`.
-    *   **Benefit**: Constant O(1) time complexity regardless of how many pages deep the user scrolls.
+    *   **Why**: Offset-based pagination becomes slow for large datasets.
+    *   **Implementation**: Uses `created_at` as a cursor:
+        ```sql
+        WHERE created_at < :cursor
+        ORDER BY created_at DESC
+        LIMIT :limit
+        ```
+    *   **Benefit**: Consistent performance even with 1M+ records.
 
 2.  **Database Indexing**
-    *   Indexes created on high-cardinality fields: `category`, `price`, and `created_at` to support efficient filtering and sorting.
+    *   Indexes created on `category`, `price`, and `created_at` to support fast filtering, sorting, and pagination.
 
 3.  **Connection Pooling**
-    *   Utilized `mysql2` connection pool to maintain distinct connections for concurrent users, reducing the overhead of TCP handshakes for every request.
+    *   Uses `mysql2` connection pooling to reduce connection overhead and support concurrent traffic.
 
 ---
 
-##  Caching Strategy
+## ⚡️ Caching Strategy
 
-We implement a **Cache-Aside** (Lazy Loading) strategy using Redis to reduce database load and improve response times (P95 < 200ms).
+A **Cache-Aside** strategy using Redis is implemented to reduce database load and meet the P95 < 200ms requirement.
 
-1.  **Product Listings**:
-    *   **Key**: Composite key based on query params (e.g., `products:electronics:0-100:cursorV1:...`).
-    *   **Logic**: Check Cache -> Return if Hit -> Else Query DB -> Write to Cache -> Return.
-    *   **TTL**: 60 seconds (Balances freshness with performance).
+1.  **Product Listing Cache**
+    *   **Key**: Based on query parameters (example: `products:{category}:{priceRange}:{cursor}:{sort}`)
+    *   **Flow**: Cache → DB (on miss) → Cache
+    *   **TTL**: 60 seconds
+    *   **Cache Invalidation**: On product create/update, product list cache keys can be invalidated. Broad invalidation is used to keep logic simple and fast.
 
-2.  **Authentication Tokens**:
-    *   **Problem**: External Auth provider rate limits; "Thundering Herd" on expiry.
-    *   **Solution**: Tokens are cached in Redis. A Singleton Promise pattern ensures only *one* request refreshes the token when expired, while others wait for the result.
+2.  **OAuth Token Cache**
+    *   Access tokens are cached in Redis with TTL.
+    *   A **concurrency-safe refresh mechanism** ensures only one token fetch occurs on expiry, preventing redundant calls (Thundering Herd).
+
+---
+
+## 🔐 Authentication (OAuth2 – Client Credentials)
+
+Implements OAuth2 Client Credentials flow:
+*   Fetches access token from provider
+*   Caches token in Redis
+*   Automatically refreshes token on expiry
+*   Ensures concurrent requests do not trigger multiple token fetches
+
+This results in clean token lifecycle handling with no redundant network calls.
+
+---
+
+## 🔗 External API Integration
+
+**API A – Synchronous**
+*   Fetches product/order-like data.
+*   Implements:
+    *   Request timeouts
+    *   Retries with exponential backoff
+
+**API B – Webhook-Based**
+*   Registers a callback URL.
+*   Receives async updates.
+*   Ensures:
+    *   Idempotency using Redis
+    *   Safe retries
+    *   Duplicate event handling
+
+---
+
+## 🛡 Reliability & Performance
+
+The following mechanisms are implemented to prioritize response time and stability:
+*   Redis caching
+*   Rate limiting
+*   Connection pooling
+*   Centralized error handling
 
 ---
 
@@ -54,53 +98,54 @@ We implement a **Cache-Aside** (Lazy Loading) strategy using Redis to reduce dat
 *   Node.js (v18+)
 *   Docker & Docker Compose
 
-### 1. Quick Start (Docker)
-The easiest way to run the full stack (App + MySQL + Redis):
+### 1. Docker Setup
 ```bash
-# Start all services
 docker-compose up --build
 ```
 *   API: `http://localhost:3000`
-*   Database: Port 3307 (Mapped to host)
+*   MySQL: Port 3307
 
-### 2. Manual Setup (Local Dev)
-If you want to run the app locally while keeping DB in Docker:
-
+### 2. Local Development
 ```bash
-# 1. Start Support Services (MySQL & Redis)
 docker-compose up -d mysql redis
-
-# 2. Install Dependencies
 npm install
-
-# 3. Seed the Database (Important! Creates Tables & Dummy Data)
 npx ts-node scripts/seedProducts.ts
-
-# 4. Run the App
 npm run dev
 ```
 
 ---
 
-## Trade-offs Made
+## ⚖️ Trade-offs Made
 
-1.  **Raw SQL vs. ORM**
-    *   **Decision**: Used `mysql2` with raw SQL instead of Prisma/TypeORM.
-    *   **Reason**: Maximum performance control and zero abstraction overhead. ORMs can generate inefficient queries for complex cursor pagination.
+1.  **Raw SQL vs ORM**
+    *   Used raw SQL (`mysql2`) for better performance and control.
+    *   Avoided ORM overhead for large datasets and cursor pagination.
 
 2.  **Synchronous API Retries**
-    *   **Decision**: Implemented in-memory exponential backoff for the External API integration.
-    *   **Trade-off**: Simple to implement but holds the connection open. For a larger system, a Message Queue (RabbitMQ) would be better to decouple reliability from response time.
+    *   Simpler retry logic with exponential backoff.
+    *   Holds the request open; async queues would be better at larger scale.
 
-3.  **Strict Project Structure**
-    *   **Decision**: Avoided over-engineering with Dependency Injection frameworks (like Inversify or NestJS).
-    *   **Reason**: Kept the code readable and accessible for any developer ("Junior friendly") while maintaining separation of concerns.
+3.  **Minimal Framework Usage**
+    *   Avoided heavy frameworks to keep the codebase simple and readable.
 
 ---
 
-##  Key API Endpoints
+## 📡 Key API Endpoints
 
-*   `GET /products` - List products (supports `cursor`, `category`, `search`).
-*   `GET /products/external/:id` - Fetch data from external API (demonstrates integration).
-*   `GET /health` - Health check.
-*   `POST /webhooks/update` - Receives async events (Idempotent).
+*   `GET /products` – Product listing with cursor pagination, filters, sorting, and search
+*   `GET /products/external/:id` – External API integration
+*   `POST /webhooks/update` – Webhook receiver (idempotent)
+*   `GET /health` – Health check
+*   `GET /metrics` – Basic metrics (bonus)
+
+---
+
+## ☁️ Deployment
+
+The backend is deployed on Render, using:
+*   Managed Redis
+*   External MySQL
+*   Environment-based configuration
+
+### Focus Area
+I focused most on **performance optimization, Redis usage, and reliable API integrations**, as FarmLokal’s use case is read-heavy and latency-sensitive.
