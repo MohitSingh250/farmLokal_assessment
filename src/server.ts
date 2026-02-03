@@ -1,8 +1,16 @@
 import app from './app';
-import 'dotenv/config';
+import { env } from './config/env';
+import { checkDbConnection } from './config/mysql';
+import { redis } from './config/redis';
 
-const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const startServer = async () => {
+  await checkDbConnection();
+  await redis.ping();
+
+  app.listen(env.PORT, () => {
+    console.log(`Server running on port ${env.PORT}`);
+  });
+};
+
+startServer();
