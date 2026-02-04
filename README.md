@@ -109,8 +109,32 @@ docker-compose up --build
 ```bash
 docker-compose up -d mysql redis
 npm install
+
+# Create .env from example and add your configuration
+cp .env.example .env
+
+# Seed the database (Default: 10,000 records)
 npx ts-node scripts/seedProducts.ts
+
+# To seed 1M+ records:
+SEED_COUNT=1000000 npx ts-node scripts/seedProducts.ts
+
 npm run dev
+```
+
+### 3. Testing & Verification
+
+**Load Testing (k6)**
+Verify the P95 < 200ms target:
+```bash
+# Install k6 if not present (brew install k6)
+k6 run scripts/loadTest.js
+```
+
+**Metrics**
+Check application health and resource usage:
+```bash
+curl http://localhost:3001/metrics
 ```
 
 ---
@@ -136,7 +160,7 @@ npm run dev
 *   `GET /products/external/:id` – External API integration
 *   `POST /webhooks/update` – Webhook receiver (idempotent)
 *   `GET /health` – Health check
-*   `GET /metrics` – Basic metrics (bonus)
+*   `GET /metrics` – Application metrics (DB/Redis status, Memory usage)
 
 ---
 
