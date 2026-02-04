@@ -10,4 +10,5 @@ export const env = {
   DB_PORT: Number(process.env.DB_PORT) || 3306,
   REDIS_HOST: process.env.REDIS_HOST || 'localhost',
   REDIS_PORT: Number(process.env.REDIS_PORT) || 6379,
+  EXTERNAL_API_URL: process.env.EXTERNAL_API_URL || 'https://fakestoreapi.com/products',
 };

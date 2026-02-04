@@ -12,7 +12,6 @@ interface Product {
 
 export const ProductService = {
   getProducts: async ({ cursor, limit = 20, category, minPrice, maxPrice, search }: any) => {
-    // 1. Try Cache First (Cache Key construction)
     const cacheKey = `products:${category || 'all'}:${minPrice || '0'}-${maxPrice || 'inf'}:${cursor || 'start'}:${limit}:${search || 'none'}`;
     const cachedData = await redis.get(cacheKey);
 
@@ -20,7 +19,6 @@ export const ProductService = {
       return JSON.parse(cachedData);
     }
 
-    // 2. Build Query
     let query = 'SELECT * FROM products WHERE 1=1';
     const params: any[] = [];
 
@@ -44,25 +42,23 @@ export const ProductService = {
       params.push(`%${search}%`, `%${search}%`);
     }
 
-    // Cursor Pagination Logic (using created_at as cursor)
+
     if (cursor) {
-      query += ' AND created_at < ?'; // Assuming we sort DESC (newest first)
+      query += ' AND created_at < ?'; 
       params.push(new Date(cursor));
     }
 
     query += ' ORDER BY created_at DESC LIMIT ?';
     params.push(Number(limit) + 1); // Fetch 1 extra to check if there is a next page
 
-    // 3. Execute Query
     const [rows]: any = await dbPool.query(query, params);
 
-    // 4. Process Results
     let data = rows as Product[];
     let nextCursor = null;
 
     if (data.length > limit) {
-      nextCursor = data[limit - 1]?.created_at; // The timestamp of the last valid item
-      data.pop(); // Remove the extra item
+      nextCursor = data[limit - 1]?.created_at; 
+      data.pop();
     }
 
     const result = {
@@ -70,7 +66,6 @@ export const ProductService = {
       nextCursor,
     };
 
-    // 5. Cache Result (60 seconds TTL)
     await redis.set(cacheKey, JSON.stringify(result), 'EX', 60);
 
     return result;

@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 
 // Load env from project root
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -24,27 +25,28 @@ const seed = async () => {
     console.log('Creating Schema...');
     const schema = `
       CREATE TABLE products (
-        id INT AUTO_INCREMENT PRIMARY KEY,
+        id VARCHAR(36) PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
         description TEXT,
         price DECIMAL(10, 2) NOT NULL,
-        category VARCHAR(100),
+        category VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        INDEX idx_category (category),
-        INDEX idx_price (price),
+        INDEX idx_category_price (category, price),
         INDEX idx_created_at (created_at)
       );
     `;
     await connection.query(schema);
 
-    console.log('Inserting 10,000 products...');
+    console.log('Inserting products...');
     const batchSize = 1000;
-    const totalRecords = 10000;
+    const totalRecords = Number(process.env.SEED_COUNT) || 10000;
+    console.log(`Target: ${totalRecords} records`);
     
     for (let i = 0; i < totalRecords; i += batchSize) {
       const values = [];
       for (let j = 0; j < batchSize; j++) {
         values.push([
+          crypto.randomUUID(),
           `Product ${i + j}`,
           `Description for product ${i + j}`,
           (Math.random() * 1000).toFixed(2),
@@ -53,7 +55,7 @@ const seed = async () => {
         ]);
       }
       
-      const sql = `INSERT INTO products (name, description, price, category, created_at) VALUES ?`;
+      const sql = `INSERT INTO products (id, name, description, price, category, created_at) VALUES ?`;
       await connection.query(sql, [values]);
       process.stdout.write('.');
     }

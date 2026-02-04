@@ -2,8 +2,9 @@ import axios from 'axios';
 import { TokenService } from './token.service';
 
 
-// Simulating an external API URL (would be in env in real app)
-const API_URL = 'https://fakestoreapi.com/products';
+import { env } from '../config/env';
+
+const API_URL = env.EXTERNAL_API_URL;
 
 interface ApiResponse {
   id: string;
@@ -11,7 +12,6 @@ interface ApiResponse {
   data: any;
 }
 
-// Simple manual delay function
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export const ExternalApiService = {
@@ -30,13 +30,10 @@ export const ExternalApiService = {
       } catch (error: any) {
         attempt++;
         if (attempt > retries) {
-          // Failed after retries
           throw error;
         }
 
-        // Exponential Backoff: 500ms, 1000ms, 2000ms
         const backoffTime = 500 * Math.pow(2, attempt - 1);
-        // Retrying...
         await delay(backoffTime);
       }
     }
